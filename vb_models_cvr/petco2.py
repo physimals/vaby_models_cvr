@@ -14,17 +14,19 @@ except ImportError:
 import numpy as np
 
 from svb.model import Model, ModelOption
-from svb.utils import ValueList
+from svb.utils import ValueList, TF_DTYPE, NP_DTYPE
+
 from svb.parameter import get_parameter
 
 from svb_models_asl import __version__
 
 class CvrPetCo2Model(Model):
     """
+    Inference forward model for CVR measurement using PETCo2
     """
 
     OPTIONS = [
-        # PHysiological data file
+        # Physiological data file containing PETCO2 measurements with timings
         ModelOption("phys_data", "Physiological data file", type=str, default=None),
 
         # Protocol parameters
@@ -35,6 +37,12 @@ class CvrPetCo2Model(Model):
         ModelOption("air_pressure", "Barometric pressure", unit="mbar", type=int, default=1020),
         ModelOption("threshold_trig", "Threshold to detect triggers", type=int, default=3),
         ModelOption("delay", "Mechanical delay", type=int, default=15),
+
+        # Model options
+        ModelOption("infer_sig0", "Infer signal offset", type=bool, default=False),
+        ModelOption("infer_delay", "Infer delay shift on PETCO2", type=bool, default=False),
+        ModelOption("infer_drift", "Infer a linear drift on signal", type=bool, default=False),
+        ModelOption("sigmoid_response", "Use sigmoid relationship between PETCO2 and CVR", type=bool, default=False)
     ]
 
     def __init__(self, data_model, **options):
@@ -42,12 +50,20 @@ class CvrPetCo2Model(Model):
         self.phys_data = np.loadtxt(self.phys_data)
         self._preproc_co2()
 
+        # Baseline map [W, 1, 1]
+        self.dpet_co2 = self.hypercap - self.normocap
+        self.baseline = tf.constant(np.mean(self.data_model.data_flattened, axis=1), dtype=TF_DTYPE)
+
         self.params = [
-            get_parameter("mag", mean=1.0, prior_var=1e6, post_var=10),
+            get_parameter("mag", mean=1.0, prior_var=1e9, post_var=10),
         ]
+        if self.infer_sig0:
+            self.params.append(get_parameter("sig0", mean=0, prior_var=1e9, post_var=10))
       
     def evaluate(self, params, tpts):
         """
+        FIXME won't work in batch because of timepoints
+
         :param t: Time values tensor of shape [W, 1, N] or [1, 1, N]
         :param params Sequence of parameter values arrays, one for each parameter.
                       Each array is [W, S, 1] tensor where W is the number of nodes and
@@ -59,7 +75,23 @@ class CvrPetCo2Model(Model):
                  and for each time value using the specified parameter values
         """
         mag = params[0]
-        return mag * self.out_co2
+        if self.infer_sig0:
+            sig0 = params[1]
+        else:
+            sig0 = 0
+
+        return sig0 + mag * tf.reshape(self.baseline, tf.shape(mag)) * self.out_co2 * self.dpet_co2 / 100
+
+    def tpts(self):
+        """
+        Get the full set of timeseries time values
+
+        FIXME return real time values
+
+        :return: Either a Numpy array of shape [N] or a Numpy array of shape
+                 [W, N] for nodewise timepoints.
+        """
+        return np.linspace(0, self.data_model.n_tpts, num=self.data_model.n_tpts, endpoint=False, dtype=NP_DTYPE)
 
     def __str__(self):
         return "CVR-PETCO2 model: %s" % __version__
@@ -139,7 +171,7 @@ class CvrPetCo2Model(Model):
 
         # Make new time course at the TR resolution, then normalise output
         block = round(tr*self.samp_rate)
-        ev_co2 = np.zeros((vols,1))
+        ev_co2 = np.zeros((vols,))
         for i in range(vols):
             ev_co2[i] = self.petco2_resamp[block * i + block-1]
 
