@@ -2,6 +2,7 @@
 _version.py
 build
 dist
-scripts/*out*
+scripts/*out
 *.egg-info
 *__pycache__*
+.DS_Store
