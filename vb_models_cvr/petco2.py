@@ -59,6 +59,40 @@ class CvrPetCo2Model(Model):
         if self.infer_delay:
             self.params.append(get_parameter("delay", mean=0, prior_var=100, post_var=10))
 
+    def fit_glm(self, delay_min=-1, delay_max=1, delay_step=1):
+        bold_data = self.data_model.data_flattened
+        t = np.arange(0, len(self.co2_mmHg), dtype=np.float32)
+        delays = np.arange(delay_min, delay_max+delay_step, delay_step, dtype=np.float32)
+        best_resid = np.ones(bold_data.shape[0], dtype=np.float32) * 1e99
+        best_delay = np.zeros(bold_data.shape[0], dtype=np.float32)
+        best_cvr = np.zeros(bold_data.shape[0], dtype=np.float32)
+        best_sig0 = np.zeros(bold_data.shape[0], dtype=np.float32)
+        best_modelfit = np.zeros(bold_data.shape, dtype=np.float32)
+        for delay in delays:
+            print(delay)
+            delayed_tpts = t - delay
+            delayed_co2 = np.interp(delayed_tpts, t, self.co2_mmHg)
+            x = np.array([
+                delayed_co2,
+                np.ones(len(self.co2_mmHg))
+            ]).T
+            for vox in range(bold_data.shape[0]):
+                y = bold_data[vox, :]
+                beta, resid, rank, s = np.linalg.lstsq(x, y)
+                model = np.dot(x, beta)
+                vox_resid = resid[0]
+                if vox_resid < best_resid[vox]:
+                    best_delay[vox] = delay
+                    best_cvr[vox] = beta[0]
+                    best_sig0[vox] = beta[1]
+                    best_modelfit = model
+                    best_resid[vox] = vox_resid
+        cvr_nii = self.data_model.nifti_image(best_cvr)
+        delay_nii = self.data_model.nifti_image(best_delay)
+        sig0_nii = self.data_model.nifti_image(best_sig0)
+        modelfit_nii = self.data_model.nifti_image(best_modelfit)
+        return cvr_nii, delay_nii, sig0_nii, modelfit_nii
+
     def evaluate(self, params, tpts):
         """
         FIXME won't work in batch because of timepoints
@@ -202,16 +236,12 @@ class CvrPetCo2Model(Model):
         for i in range(vols):
             ev_co2[i] = self.petco2_resamp[block * i + block-1]
 
-        #self.out_co2=(ev_co2-np.min(ev_co2))/(np.max(ev_co2)-np.min(ev_co2))
-
-        # Differences between timepoints for quick interpolation. Given a delay
-        # time > 0 we can compute co2 = co2[int(delay)] + frac(delay) * diff[int(delay)]
-        #self.co2_diff = np.zeros(len(self.out_co2), dtype=np.float32)
-        #self.co2_diff[:-1] = self.out_co2[1:] - self.out_co2[:-1]
-
         # Calculate normo/hypercapnea in mmHg
         self.air_pressure_mmhg = self.air_pressure/1.33322387415 # pressure mbar
         self.co2_mmHg = (ev_co2 * self.air_pressure_mmhg) / 100 # div by 100 as values are in percent
+
+        # Differences between timepoints for quick interpolation. Given a delay
+        # time > 0 we can compute co2 = co2[int(delay)] + frac(delay) * diff[int(delay)]
         self.co2_diff = np.zeros(len(self.co2_mmHg), dtype=np.float32)
         self.co2_diff[:-1] = self.co2_mmHg[1:] - self.co2_mmHg[:-1]
 
