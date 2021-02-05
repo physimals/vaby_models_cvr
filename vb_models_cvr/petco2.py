@@ -85,9 +85,9 @@ class CvrPetCo2Model(Model):
                     best_delay[vox] = delay
                     best_cvr[vox] = beta[0]
                     best_sig0[vox] = beta[1]
-                    best_modelfit = model
+                    best_modelfit[vox] = model
                     best_resid[vox] = vox_resid
-        cvr_nii = self.data_model.nifti_image(best_cvr)
+        cvr_nii = self.data_model.nifti_image(best_cvr * 100 / best_sig0)
         delay_nii = self.data_model.nifti_image(best_delay)
         sig0_nii = self.data_model.nifti_image(best_sig0)
         modelfit_nii = self.data_model.nifti_image(best_modelfit)
