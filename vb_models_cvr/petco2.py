@@ -16,10 +16,9 @@ import tensorflow_probability as tfp
 
 from svb.model import Model, ModelOption
 from svb.utils import ValueList
-
 from svb.parameter import get_parameter
 
-from svb_models_asl import __version__
+from vb_models_cvr import __version__
 
 class CvrPetCo2Model(Model):
     """
@@ -87,15 +86,12 @@ class CvrPetCo2Model(Model):
                     best_sig0[vox] = beta[1]
                     best_modelfit[vox] = model
                     best_resid[vox] = vox_resid
-        cvr_nii = self.data_model.nifti_image(best_cvr * 100 / best_sig0)
-        delay_nii = self.data_model.nifti_image(best_delay)
-        sig0_nii = self.data_model.nifti_image(best_sig0)
-        modelfit_nii = self.data_model.nifti_image(best_modelfit)
-        return cvr_nii, delay_nii, sig0_nii, modelfit_nii
+
+        return best_cvr*100/best_sig0, best_delay, best_sig0, best_modelfit
 
     def evaluate(self, params, tpts):
         """
-        FIXME won't work in batch because of timepoints
+        FIXME won't work in SVB batch training because of timepoints
 
         :param t: Time values tensor of shape [W, 1, N] or [1, 1, N]
         :param params Sequence of parameter values arrays, one for each parameter.
@@ -201,7 +197,7 @@ class CvrPetCo2Model(Model):
         resp_period = round(1/harm) # e.g. 8s
 
         # Search window = 1 second more than the respiratory period
-        nsearch_vols = (resp_period+1)*self.samp_rate
+        nsearch_vols = int((resp_period+1)*self.samp_rate)
         windows = int(np.floor(self.petco2_trim.shape[0]/nsearch_vols))
 
         # Find peak PETCO2 in each window - it's value and index position
@@ -231,7 +227,7 @@ class CvrPetCo2Model(Model):
 
         # Create a timecourse of the end tidal CO2 values at the TR's for use with CVR sigmoids
         # Make new time course at the TR resolution and normalise timecourse betwwen 0 and 1 to create EV
-        block = round(tr*self.samp_rate)
+        block = int(round(tr*self.samp_rate))
         ev_co2 = np.zeros((vols,), dtype=np.float32)
         for i in range(vols):
             ev_co2[i] = self.petco2_resamp[block * i + block-1]
