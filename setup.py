@@ -87,7 +87,7 @@ KWARGS = {
     'packages' : find_packages(),
     'package_data' : {},
     'entry_points' : {
-        'svb.models' : [
+        'varbay.models' : [
             'cvr_petco2=vb_models_cvr:CvrPetCo2Model',
         ],
     },
