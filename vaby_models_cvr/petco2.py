@@ -1,10 +1,14 @@
 """
-Inference forward model for CVR measurement using PETCo2
+VABY_MODELS_CVR: VABY forward models for CVR
+
+Forward model for CVR measurement using BOLD MRI and PETCo2
 
 Based on Matlab code written by Joana Pinto, December 2020, Oxford
 and adapted from Daniel Bulte 2018 script
 
 Python conversion by Martin Craig 2021, Nottingham
+
+(c) 2021 University of Nottingham
 """
 try:
     import tensorflow.compat.v1 as tf
@@ -14,11 +18,11 @@ except ImportError:
 import numpy as np
 import tensorflow_probability as tfp
 
-from svb.model import Model, ModelOption
-from svb.utils import ValueList
-from svb.parameter import get_parameter
+from vaby.model import Model, ModelOption
+from vaby.utils import ValueList
+from vaby.parameter import get_parameter
 
-from vb_models_cvr import __version__
+from ._version import __version__
 
 class CvrPetCo2Model(Model):
     """
@@ -77,7 +81,7 @@ class CvrPetCo2Model(Model):
             ]).T
             for vox in range(bold_data.shape[0]):
                 y = bold_data[vox, :]
-                beta, resid, rank, s = np.linalg.lstsq(x, y)
+                beta, resid, _rank, _s = np.linalg.lstsq(x, y)
                 model = np.dot(x, beta)
                 vox_resid = resid[0]
                 if vox_resid < best_resid[vox]:
@@ -143,6 +147,9 @@ class CvrPetCo2Model(Model):
             co2_mmHg = tf.tile(self.co2_mmHg[np.newaxis, ...], (tf.shape(t_base_idx)[0], 1))
             delayed_co2 = tf.gather(co2_mmHg, t_base_idx, axis=1, batch_dims=1)
 
+        # Sigmoid response
+        #return sig0 + (b/(1+c.(e^(-(delayed_co2-c)/d))))/100
+
         return sig0 * (1 + cvr * delayed_co2 / 100)
 
     def tpts(self):
@@ -181,7 +188,6 @@ class CvrPetCo2Model(Model):
 
         # Determined respiratory frequency during baseline and use info to
         # determine size of end-tidal search window
-        samp_period = 1/self.samp_rate
         baseline_vols = int(self.baseline * self.samp_rate)
         baseline_fft = np.fft.fft(self.petco2_trim[:baseline_vols])
         p2 = np.abs(baseline_fft/baseline_vols)
@@ -190,7 +196,6 @@ class CvrPetCo2Model(Model):
         f = np.linspace(0, self.samp_rate/2, int(baseline_vols/2)+1)
 
         loc = np.argmax(p1[1:])
-        pk = p1[loc+1]
 
         pkloc = loc+1
         harm = f[pkloc]
@@ -203,7 +208,6 @@ class CvrPetCo2Model(Model):
         # Find peak PETCO2 in each window - it's value and index position
         posmax = np.zeros(windows, dtype=np.int)
         winmax = np.zeros(windows)
-        k=0
         for i in range(windows):
             for j in range(nsearch_vols):
                 if j == 0 or self.petco2_trim[i*nsearch_vols+j] > winmax[i]:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Setup script for vb_models_cvr
+Setup script for vaby_models_cvr
 """
 import os
 import subprocess
@@ -10,7 +10,7 @@ import io
 from setuptools import setup
 from setuptools import find_packages
 
-MODULE = 'vb_models_cvr'
+MODULE = 'vaby_models_cvr'
 
 def get_filetext(rootdir, filename):
     """ Get the text of a local file """
@@ -74,9 +74,9 @@ def get_version(rootdir):
 
 MODULE_DIR = os.path.abspath(os.path.dirname(__file__))
 KWARGS = {
-    'name' : 'vb_models_cvr',
+    'name' : 'vaby_models_cvr',
     'version' : get_version(MODULE_DIR),
-    'description' : 'VB models for CVR',
+    'description' : 'VABY forward models for CVR',
     'long_description' : get_filetext(MODULE_DIR, 'README.md'),
     'long_description_content_type' : 'text/markdown',
     'url' : '',
@@ -87,8 +87,8 @@ KWARGS = {
     'packages' : find_packages(),
     'package_data' : {},
     'entry_points' : {
-        'varbay.models' : [
-            'cvr_petco2=vb_models_cvr:CvrPetCo2Model',
+        'vaby.models' : [
+            'cvr_petco2=vaby_models_cvr:CvrPetCo2Model',
         ],
     },
 }

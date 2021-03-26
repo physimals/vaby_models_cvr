@@ -6,7 +6,7 @@ import sys
 import matplotlib.pyplot as plt
 import nibabel as nib
 
-from varbay_avb import run
+from vaby_avb import run
 
 model = "cvr_petco2"
 outdir = "cvr_example_vb_out"

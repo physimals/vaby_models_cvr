@@ -1,8 +1,8 @@
 import sys
 import os
 
-from varbay.data import DataModel
-from vb_models_cvr.petco2 import CvrPetCo2Model
+from vaby.data import DataModel
+from vaby_models_cvr import CvrPetCo2Model
 
 options = {
     "phys_data" : "phys_data.txt",
