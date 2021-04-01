@@ -55,7 +55,7 @@ class CvrPetCo2Model(Model):
         self._preproc_co2()
 
         self.params = [
-            get_parameter("cvr", mean=1.0, dist="LogNormal", prior_var=2000, post_var=10),
+            get_parameter("cvr", mean=1.0, dist="FoldedNormal", prior_var=2000, post_var=10),
         ]
         if self.infer_sig0:
             self.params.append(get_parameter("sig0", mean=1, prior_var=1e9, post_mean=1, post_var=10))
