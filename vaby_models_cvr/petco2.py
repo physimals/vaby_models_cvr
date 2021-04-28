@@ -73,6 +73,7 @@ class CvrPetCo2Model(Model):
         return np.mean(data, axis=-1), None
 
     def fit_glm(self, delay_min=-1, delay_max=1, delay_step=1):
+        self.log.info("GLM: Doing fitting on %i voxels", self.data_model.n_unmasked_voxels)
         bold_data = self.data_model.data_flattened
         t = self.tpts() # in seconds
         delays = np.arange(delay_min, delay_max+delay_step, delay_step, dtype=np.float32)
@@ -88,6 +89,7 @@ class CvrPetCo2Model(Model):
                 (delayed_co2 - self.min_co2mmHg) / (self.max_co2mmHg - self.min_co2mmHg),
                 np.ones(self.data_model.n_tpts)
             ]).T
+            self.log.info("GLM: fitting with delay=%f", delay)
             for vox in range(bold_data.shape[0]):
                 y = bold_data[vox, :]
                 beta, resid, _rank, _s = np.linalg.lstsq(x, y)
@@ -100,6 +102,7 @@ class CvrPetCo2Model(Model):
                     best_modelfit[vox] = model
                     best_resid[vox] = vox_resid
 
+        self.log.info("GLM: DONE")
         return best_cvr*100/best_sig0 / (self.max_co2mmHg - self.min_co2mmHg), best_delay, best_sig0, best_modelfit
 
     def evaluate(self, params, tpts):
