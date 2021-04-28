@@ -11,13 +11,17 @@ from vaby_avb import run
 model = "cvr_petco2"
 outdir = "cvr_example_vb_out"
 
+import numpy as np
+phys_data = np.loadtxt("phys_data.txt")
+
 options = {
-    "phys_data" : "phys_data.txt",
+    "phys_data" : phys_data[:, 1],
     "infer_sig0" : True,
     "infer_delay" : True,
     "save_mean" : True,
     "save_noise" : True,
     "save_param_history" : True,
+    "tr" : 0.8,
     #"save_free_energy_history" : True,
     "save_runtime" : True,
     "save_free_energy" : True,
@@ -27,6 +31,11 @@ options = {
     "save_var" : True,
     "log_stream" : sys.stdout,
     "max_iterations" : 50,
+#    "param_overrides" : {
+#        "cvr" : {
+#            "dist" : "LogNormal",
+#        }
+#    }
 }
 
 runtime, avb = run("filtered_func_data.nii.gz", model, "cvr_example_vb_out", mask="small.nii.gz", **options)
