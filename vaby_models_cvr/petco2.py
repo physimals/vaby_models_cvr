@@ -210,7 +210,7 @@ class CvrPetCo2Model(Model):
 
         if self.data_start_time is None:
             # Estimate the time of the first volume in the MR data
-            self.data_start_time = self.estimate_data_start_time()
+            self.data_start_time = max(self.estimate_data_start_time(), 0)
 
             # Calculate the latest possible start time of the MR data
             # in case the cross correlation method returns something silly
@@ -218,6 +218,10 @@ class CvrPetCo2Model(Model):
             mr_duration = self.tr * self.data_model.n_tpts
             max_time_begin = pco2_duration - mr_duration
             self.data_start_time = min(self.data_start_time, max_time_begin)
+            self.log.debug("co2 len: %i", len(self.petco2))
+            self.log.debug("mr len: %i", self.data_model.n_tpts)
+            self.log.debug("max start: %f", max_time_begin)
+        self.log.debug("data start: %f", self.data_start_time)
         petco2_trim = self.petco2[int(self.data_start_time * self.samp_rate):]
 
         # Determined respiratory frequency during baseline and use info to
