@@ -62,12 +62,12 @@ class CvrPetCo2Model(Model):
         self._preproc_co2()
 
         self.params = [
-            get_parameter("cvr", mean=1.0, dist="FoldedNormal", prior_var=2000, post_var=10),
+            get_parameter("cvr", mean=1.0, dist="FoldedNormal", prior_var=2000, post_var=10, **options),
         ]
         if self.infer_sig0:
-            self.params.append(get_parameter("sig0", mean=1, prior_var=1e9, post_mean=1, post_var=10, post_init=self._init_sig0))
+            self.params.append(get_parameter("sig0", mean=1, prior_var=1e9, post_mean=1, post_var=10, post_init=self._init_sig0, **options))
         if self.infer_delay:
-            self.params.append(get_parameter("delay", mean=0, prior_var=2500, post_var=10))
+            self.params.append(get_parameter("delay", mean=0, prior_var=2500, post_var=10, **options))
 
     def _init_sig0(self, _param, _t, data):
         return np.mean(data, axis=-1), None
