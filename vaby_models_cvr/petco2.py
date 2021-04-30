@@ -16,7 +16,7 @@ except ImportError:
     import tensorflow as tf
 
 import numpy as np
-import tensorflow_probability as tfp
+#import tensorflow_probability as tfp
 
 from vaby.model import Model, ModelOption
 from vaby.utils import ValueList
