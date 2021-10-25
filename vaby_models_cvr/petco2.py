@@ -10,10 +10,7 @@ Python conversion by Martin Craig 2021, Nottingham
 
 (c) 2021 University of Nottingham
 """
-try:
-    import tensorflow.compat.v1 as tf
-except ImportError:
-    import tensorflow as tf
+import tensorflow as tf
 
 import numpy as np
 #import tensorflow_probability as tfp
@@ -32,6 +29,7 @@ class CvrPetCo2Model(Model):
     OPTIONS = [
         # Physiological data file containing PETCO2 measurements with timings
         ModelOption("phys_data", "Physiological data (PETCO2 or O2 time series)", type=str, default=None),
+        ModelOption("custom_regressor", "Custom regressor time series", type=str, default=None),
 
         # Protocol parameters
         ModelOption("baseline", "Length of initial baseline block", unit="s", type=int, default=60),
@@ -57,9 +55,16 @@ class CvrPetCo2Model(Model):
     def __init__(self, data_model, **options):
         Model.__init__(self, data_model, **options)
 
-        if isinstance(self.phys_data, str):
-            self.phys_data = np.loadtxt(self.phys_data)
-        self._preproc_co2()
+        if self.phys_data is not None and self.custom_regressor is not None:
+            raise ValueError("Cannot specify a CO2 trace and a custom regressor")
+        elif self.phys_data is not None:
+            if isinstance(self.phys_data, str):
+                self.phys_data = np.loadtxt(self.phys_data)
+            self._preproc_co2()
+        elif self.custom_regressor:
+            pass
+        else:
+            raise ValueError("Either a CO2 trace or a custom regressor must be given")
 
         self.params = [
             get_parameter("cvr", mean=1.0, dist="FoldedNormal", prior_var=2000, post_var=10, **options),
@@ -73,8 +78,8 @@ class CvrPetCo2Model(Model):
         return np.mean(data, axis=-1), None
 
     def fit_glm(self, delay_min=-1, delay_max=1, delay_step=1, progress_cb=None):
-        self.log.info("GLM: Doing fitting on %i voxels", self.data_model.n_unmasked_voxels)
-        bold_data = self.data_model.data_flattened
+        self.log.info("GLM: Doing fitting on %i voxels", self.data_model.n_voxels)
+        bold_data = self.data_model.data_flat
         t = self.tpts() # in seconds
         delays = np.arange(delay_min, delay_max+delay_step, delay_step, dtype=np.float32)
         best_resid = np.ones(bold_data.shape[0], dtype=np.float32) * 1e99
@@ -178,7 +183,7 @@ class CvrPetCo2Model(Model):
 
     def estimate_data_start_time(self):
         # Mean time series
-        bold_data_average = np.mean(self.data_model.data_flattened, axis=0)
+        bold_data_average = np.mean(self.data_model.data_flat, axis=0)
 
         # Interpolate BOLD timeseries onto PETCO2 trace
         mr_timings = self.tpts()
