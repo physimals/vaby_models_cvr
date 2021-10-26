@@ -15,7 +15,7 @@ import numpy as np
 pco2 = np.loadtxt("pco2.txt")
 
 options = {
-    "phys_data" : pco2,
+    "regressors" : pco2,
     "tr" : 0.8,
     "infer_sig0" : True,
     "infer_delay" : True,
@@ -29,7 +29,7 @@ options = {
     "save_var" : False,
     "save_log" : True,
     "log_stream" : sys.stdout,
-    "max_iterations" : 50,
+    "max_iterations" : 5,
 }
 
 runtime, avb = run("filtered_func_data.nii.gz", model, "cvr_example_vb_out", mask="mask.nii.gz", **options)
