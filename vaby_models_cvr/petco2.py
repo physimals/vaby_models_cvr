@@ -55,14 +55,17 @@ class CvrPetCo2Model(Model):
             raise ValueError("A regressor must be provided")
 
         if isinstance(self.regressors, str):
-            self.regressors = np.squeeze(np.loadtxt(self.regressors))
+            fnames = self.regressors.split(",") # Hopefully no commas in file names
+            self.regressors = np.array([np.squeeze(np.loadtxt(fname)) for fname in fnames])
+        else:
+            self.regressors = np.array(self.regressors)
 
         if self.regressors.ndim < 2:
-            self.regressors = self.regressors[..., np.newaxis]
+            self.regressors = self.regressors[np.newaxis, ...]
         if self.regressors.ndim != 2:
             raise ValueError("Regressor must be 1D or 2D")
 
-        self.n_regressors = self.regressors.shape[1]
+        self.n_regressors = self.regressors.shape[0]
         self.regressor_types = [s.strip() for s in self.regressor_types.split(",")]
         if len(self.regressor_types) != self.n_regressors:
             raise ValueError("Number of regressors provided (%i) does not match number of regressor types (%i)" % (self.n_regressors, len(self.regressor_types)))
@@ -70,7 +73,6 @@ class CvrPetCo2Model(Model):
             # Use same value for all regressors
             self.regressor_trs = self.regressor_trs * self.n_regressors
         elif len(self.regressor_trs) != self.n_regressors:
-            print(self.regressor_trs)
             raise ValueError("Number of regressors provided (%i) does not match number of time resolutions (%i)" % (self.n_regressors, len(self.regressor_trs)))
 
         # Process regressors and generate regression parameters for each
@@ -80,18 +82,19 @@ class CvrPetCo2Model(Model):
         for idx, regressor_type in enumerate(self.regressor_types):
             if regressor_type == "co2":
                 # Unprocessed CO2
-                regressors.append(self._preproc_co2(self.regressors[..., idx], self.regressor_trs[idx]))
-                self.regressor_tpts.append(self.tpts())
+                regressors.append(self._preproc_co2(self.regressors[idx], self.regressor_trs[idx]))
+                regressor_tpts.append(self.tpts())
                 self.params.append(get_parameter("cvr%i" % (idx+1), mean=1.0, dist="FoldedNormal", prior_var=2000, post_var=10, **options))
+                self.data_start_time = 0
             elif regressor_type == "petco2":
                 # Preprocessed end-tidal CO2 - not necessarily aligned with data or at same temporal resolution
-                regressors.append(self.regressors[..., idx].astype(np.float32))
-                regressor_tpts.append(np.array(range(len(self.regressors[..., idx]))) * self.regressor_trs[idx])
+                regressors.append(self.regressors[idx].astype(np.float32))
+                regressor_tpts.append(np.array(range(len(self.regressors[idx]))) * self.regressor_trs[idx])
                 self.params.append(get_parameter("cvr%i" % (idx+1), mean=1.0, dist="FoldedNormal", prior_var=2000, post_var=10, **options))
             elif regressor_type == "custom":
                 # Generic regressor, not necessarily aligned to data or at same temporal resolution
-                regressors.append(self.regressors[..., idx].astype(np.float32))
-                regressor_tpts.append(np.array(range(len(self.regressors[..., idx]))) * self.regressor_trs[idx])
+                regressors.append(self.regressors[idx].astype(np.float32))
+                regressor_tpts.append(np.array(range(len(self.regressors[idx]))) * self.regressor_trs[idx])
                 self.params.append(get_parameter("beta%i" % (idx+1), mean=0.0, dist="Normal", prior_var=1e6, post_var=1e3, **options))
             else:
                 raise ValueError("Unrecognized regressor type: %s" % regressor_type)
@@ -114,7 +117,7 @@ class CvrPetCo2Model(Model):
         if self.infer_sig0:
             self.params.append(get_parameter("sig0", mean=1, prior_var=1e9, post_mean=1, post_var=10, post_init=self._init_sig0, **options))
         if self.infer_delay:
-            self.params.append(get_parameter("delay", mean=0, prior_var=2500, post_var=10, **options))
+            self.params.append(get_parameter("delay", mean=0, prior_var=100, post_var=10, **options))
 
     def _init_sig0(self, _param, _t, data):
         return np.mean(data, axis=-1), None
@@ -127,7 +130,7 @@ class CvrPetCo2Model(Model):
         delays = np.arange(delay_min, delay_max+delay_step, delay_step, dtype=np.float32)
         best_resid = np.ones(bold_data.shape[0], dtype=np.float32) * 1e99
         best_delay = np.zeros(bold_data.shape[0], dtype=np.float32)
-        best_cvr = np.zeros(bold_data.shape[0], dtype=np.float32)
+        best_cvr = np.zeros((bold_data.shape[0], self.n_regressors), dtype=np.float32)
         best_sig0 = np.zeros(bold_data.shape[0], dtype=np.float32)
         best_modelfit = np.zeros(bold_data.shape, dtype=np.float32)
         for idx, delay in enumerate(delays):
@@ -137,7 +140,11 @@ class CvrPetCo2Model(Model):
             for idx, regressor in enumerate(self.regressors):
                 # FIXME sampling rates, regressor time span...
                 delayed = np.interp(delayed_tpts, self.regressor_tpts[idx], regressor)
-                x.append((delayed - self.regressor_mins[idx]) / (self.regressor_maxs[idx] - self.regressor_mins[idx]))
+                regressor_type = self.regressor_types[idx]
+                if regressor_type in ("co2", "petco2"):
+                    x.append((delayed - self.regressor_mins[idx]) / (self.regressor_maxs[idx] - self.regressor_mins[idx]))
+                else:
+                    x.append(delayed)
 
             x.append(np.ones(self.data_model.n_tpts))
             x = np.array(x).T
@@ -148,17 +155,25 @@ class CvrPetCo2Model(Model):
                 vox_resid = resid[0]
                 if vox_resid < best_resid[vox]:
                     best_delay[vox] = delay
-                    # FIXME ignoring anything apart from first beta
-                    best_cvr[vox] = beta[0]
                     best_sig0[vox] = beta[-1]
+                    for ridx, regressor_type in enumerate(self.regressor_types):
+                        if regressor_type in ("co2", "petco2"):
+                            best_cvr[vox, ridx] = beta[ridx]*100/(self.regressor_maxs[ridx] - self.regressor_mins[ridx])/best_sig0[vox]
+                        else:
+                            best_cvr[vox, ridx] = beta[ridx]/best_sig0[vox]
                     best_modelfit[vox] = model
                     best_resid[vox] = vox_resid
             if progress_cb is not None:
                 progress_cb(float(idx)/float(len(delays)))
 
         self.log.info("GLM: DONE")
-        # FIXME assuming one regressor
-        return best_cvr*100/best_sig0 / (self.regressor_maxs[0] - self.regressor_mins[0]), best_delay, best_sig0, best_modelfit
+        ret = []
+        for idx in range(self.n_regressors):
+            ret.append(best_cvr[..., idx])
+        ret.append(best_delay)
+        ret.append(best_sig0)
+        ret.append(best_modelfit)
+        return tuple(ret)
 
     def evaluate(self, params, tpts):
         """
@@ -184,7 +199,7 @@ class CvrPetCo2Model(Model):
             sig0 = 0
 
         if self.infer_delay:
-            delay = params[extra_param]
+            delay = params[extra_param] - self.data_start_time
             extra_param += 1
 
             # Apply time delay [W, (S), N] FIXME what is length of regressor
@@ -286,8 +301,15 @@ class CvrPetCo2Model(Model):
         co2 = np.squeeze(co2)
         samp_rate = 1/regressor_tr
 
+        # FIXME we need the data start time to have been already estimated, 
+        # although we probably shouldn't since there is no need to trim the CO2 trace
+        if self.data_start_time is None:
+            self.estimate_data_start_time(co2, np.array(range(len(co2))) * regressor_tr)
+            data_start = self.data_start_time
+            self.data_start_time = None
+
         # FIXME should we really trim the CO2 trace?
-        co2_trim = co2[int(self.data_start_time * samp_rate):]
+        co2_trim = co2[int(data_start * samp_rate):]
         
         # Determined respiratory frequency during baseline and use info to
         # determine size of end-tidal search window
