@@ -26,24 +26,25 @@ class CvrPetCo2Model(Model):
     Inference forward model for CVR measurement using PETCo2
     """
 
-    OPTIONS = [
-        # Regressor, e.g. physiological data file containing PETCO2 measurements
-        ModelOption("regressors", "Regression data (e.g. PETCO2 or O2 time series)", type=str, default=None),
-        ModelOption("regressor_types", "Regressor types - comma separated one for each regressor. Supported types: co2, petco2, custom", type=str, default="co2"),
-        ModelOption("regressor_trs", "Regressor time resolutions", unit="s", type=ValueList, default=[0.01,]),
+    def options(self):
+        return [
+            # Regressor, e.g. physiological data file containing PETCO2 measurements
+            ModelOption("regressors", "Regression data (e.g. PETCO2 or O2 time series)", type=str, default=None),
+            ModelOption("regressor_types", "Regressor types - comma separated one for each regressor. Supported types: co2, petco2, custom", type=str, default="co2"),
+            ModelOption("regressor_trs", "Regressor time resolutions", unit="s", type=ValueList, default=[0.01,]),
 
-        # Protocol parameters
-        ModelOption("baseline", "Length of initial baseline block", unit="s", type=int, default=60),
-        ModelOption("data_start_time", "Start of MR data relative to start of regressor data - if not provided will be estimated", unit="s", type=float, default=None),
-        ModelOption("tr", "Time between MR volumes", unit="s", type=float, default=None),
-        ModelOption("air_pressure", "Barometric pressure", unit="mbar", type=int, default=1020),
+            # Protocol parameters
+            ModelOption("baseline", "Length of initial baseline block", unit="s", type=int, default=60),
+            ModelOption("data_start_time", "Start of MR data relative to start of regressor data - if not provided will be estimated", unit="s", type=float, default=None),
+            ModelOption("tr", "Time between MR volumes", unit="s", type=float, default=None),
+            ModelOption("air_pressure", "Barometric pressure", unit="mbar", type=int, default=1020),
 
-        # Model options
-        ModelOption("infer_sig0", "Infer signal offset", type=bool, default=False),
-        ModelOption("infer_delay", "Infer delay shift on regressors", type=bool, default=False),
-        #ModelOption("infer_drift", "Infer a linear drift on signal", type=bool, default=False),
-        #ModelOption("sigmoid_response", "Use sigmoid relationship between PETCO2 and CVR", type=bool, default=False)
-    ]
+            # Model options
+            ModelOption("infer_sig0", "Infer signal offset", type=bool, default=False),
+            ModelOption("infer_delay", "Infer delay shift on regressors", type=bool, default=False),
+            #ModelOption("infer_drift", "Infer a linear drift on signal", type=bool, default=False),
+            #ModelOption("sigmoid_response", "Use sigmoid relationship between PETCO2 and CVR", type=bool, default=False)
+        ]
 
     def __str__(self):
         return "CVR-PETCO2 model: %s" % __version__
@@ -125,8 +126,8 @@ class CvrPetCo2Model(Model):
         return np.mean(data, axis=-1), None
 
     def fit_glm(self, delay_min=-1, delay_max=1, delay_step=1, progress_cb=None):
-        self.log.info("GLM: Doing fitting on %i voxels", self.data_model.n_voxels)
-        bold_data = self.data_model.data_flat
+        self.log.info("GLM: Doing fitting on %i voxels", self.data_model.data_space.size)
+        bold_data = self.data_model.data_space.srcdata.flat
         t = self.tpts() # in seconds
 
         delays = np.arange(delay_min, delay_max+delay_step, delay_step, dtype=np.float32)
@@ -148,7 +149,7 @@ class CvrPetCo2Model(Model):
                 else:
                     x.append(delayed)
 
-            x.append(np.ones(self.data_model.n_tpts))
+            x.append(np.ones(self.data_model.data_space.srcdata.n_tpts))
             x = np.array(x).T
             for vox in range(bold_data.shape[0]):
                 y = bold_data[vox, :]
@@ -253,11 +254,11 @@ class CvrPetCo2Model(Model):
         :return: Either a Numpy array of shape [N] or a Numpy array of shape
                  [W, N] for nodewise timepoints.
         """
-        return np.linspace(0, self.data_model.n_tpts, num=self.data_model.n_tpts, endpoint=False, dtype=np.float32) * self.tr
+        return np.linspace(0, self.data_model.data_space.srcdata.n_tpts, num=self.data_model.data_space.srcdata.n_tpts, endpoint=False, dtype=np.float32) * self.tr
 
     def estimate_data_start_time(self, regressor, regressor_tpts):
         # Mean time series
-        bold_data_average = np.mean(self.data_model.data_flat, axis=0)
+        bold_data_average = np.mean(self.data_model.data_space.srcdata.flat, axis=0)
 
         # Interpolate BOLD timeseries onto regressor
         mr_timings = self.tpts()
@@ -359,8 +360,8 @@ class CvrPetCo2Model(Model):
         # Create a timecourse of the end tidal CO2 values at the TR's for use with CVR sigmoids
         # Make new time course at the TR resolution and normalise timecourse betwwen 0 and 1 to create EV
         block = int(round(self.tr*samp_rate))
-        ev_co2 = np.zeros((self.data_model.n_tpts,), dtype=np.float32)
-        for i in range(self.data_model.n_tpts):
+        ev_co2 = np.zeros((self.data_model.data_space.srcdata.n_tpts,), dtype=np.float32)
+        for i in range(self.data_model.data_space.srcdata.n_tpts):
             ev_co2[i] = co2_resamp[block * i + block-1]
 
         # Convert to mmHg
