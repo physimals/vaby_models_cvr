@@ -5,8 +5,11 @@ from vaby.data import DataModel
 from vaby.utils import setup_logging
 from vaby_models_cvr import CvrPetCo2Model
 
+import numpy as np
+pco2 = np.loadtxt("pco2.txt")
+
 options = {
-    "phys_data" : "pco2.txt",
+    "regressors" : pco2,
     "tr" : 0.8,
     "save_mean" : True,
     #"save_free_energy_history" : True,
@@ -26,11 +29,7 @@ data_model = DataModel("filtered_func_data.nii.gz", mask="mask.nii.gz")
 model = CvrPetCo2Model(data_model, **options)
 cvr, delay, sig0, modelfit = model.fit_glm(delay_min=-10, delay_max=10, delay_step=2)
 
-cvr_nii = data_model.nifti_image(cvr)
-delay_nii = data_model.nifti_image(delay)
-sig0_nii = data_model.nifti_image(sig0)
-modelfit_nii = data_model.nifti_image(modelfit)
-cvr_nii.to_filename(os.path.join(OUTDIR, "cvr_glm.nii.gz"))
-delay_nii.to_filename(os.path.join(OUTDIR, "delay_glm.nii.gz"))
-sig0_nii.to_filename(os.path.join(OUTDIR, "sig0_glm.nii.gz"))
-modelfit_nii.to_filename(os.path.join(OUTDIR, "modelfit_glm.nii.gz"))
+data_model.model_space.save_data(cvr, "cvr_glm", OUTDIR)
+data_model.model_space.save_data(delay, "delay_glm", OUTDIR)
+data_model.model_space.save_data(sig0, "sig0_glm", OUTDIR)
+data_model.model_space.save_data(modelfit, "modelfit_glm", OUTDIR)

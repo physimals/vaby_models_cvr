@@ -6,7 +6,7 @@ import sys
 import matplotlib.pyplot as plt
 import nibabel as nib
 
-from vaby_avb import run
+from vaby.main import run
 
 model = "cvr_petco2"
 outdir = "cvr_example_vb_out"
@@ -15,6 +15,7 @@ import numpy as np
 pco2 = np.loadtxt("pco2.txt")
 
 options = {
+    "method" : "avb",
     "regressors" : pco2,
     "tr" : 0.8,
     "infer_sig0" : True,
