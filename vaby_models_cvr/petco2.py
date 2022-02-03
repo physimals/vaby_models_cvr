@@ -1,7 +1,8 @@
 """
-VABY_MODELS_CVR: VABY forward models for CVR
+VABY_MODELS_CVR: VABY forward models for cerebrovascular reactivity (CVR)
 
-Forward model for CVR measurement using BOLD MRI and PETCo2
+This model is intended for CVR measurement using functional MRI (BOLD/ASL)
+in conjunction with CO2 stimulus
 
 Based on Matlab code written by Joana Pinto, December 2020, Oxford
 and adapted from Daniel Bulte 2018 script
@@ -122,7 +123,7 @@ class CvrPetCo2Model(Model):
         if self.infer_delay:
             self.params.append(get_parameter("delay", mean=0, prior_var=100, post_var=10, **options))
 
-    def _init_sig0(self, _param, _t, data):
+    def _init_sig0(self, _param, data):
         return np.mean(data, axis=-1), None
 
     def fit_glm(self, delay_min=-1, delay_max=1, delay_step=1, progress_cb=None):
