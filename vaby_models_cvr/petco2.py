@@ -111,8 +111,8 @@ class CvrPetCo2Model(Model):
         # Min/max values
         self.regressor_mins = np.min(self.regressors, axis=1)
         self.regressor_maxs = np.max(self.regressors, axis=1)
-        self.log.info("Regressor minimum values: %s", self.regressor_mins)
-        self.log.info("Regressor maximum values: %s", self.regressor_maxs)
+        self.log.info(" - Regressor minimum values: %s", self.regressor_mins)
+        self.log.info(" - Regressor maximum values: %s", self.regressor_maxs)
 
         # Estimate data start time
         if self.data_start_time is None:
@@ -267,18 +267,18 @@ class CvrPetCo2Model(Model):
 
         _cc, delay_vols = self._cross_corr(bold_data_interp, regressor)
         self.data_start_time = -delay_vols * regressor_tpts[1] # to seconds assuming uniform spacing
-        self.log.info("Cross correlation estimated data start time: %f", self.data_start_time)
+        self.log.info(" - Cross correlation estimated data start time: %f", self.data_start_time)
 
         # Calculate the latest possible start time of the MR data
         # in case the cross correlation method returns something silly
         regressor_duration = len(regressor) * regressor_tpts[1]
         mr_duration = mr_timings[-1]
         max_time_begin = regressor_duration - mr_duration
-        self.log.debug("Regressor duration: %f", regressor_duration)
-        self.log.debug("MR duration: %f", mr_duration)
-        self.log.info("Absolute latest start time: %f", max_time_begin)
+        self.log.debug(" - Regressor duration: %f", regressor_duration)
+        self.log.debug(" - MR duration: %f", mr_duration)
+        self.log.info(" - Absolute latest start time: %f", max_time_begin)
         self.data_start_time = min(self.data_start_time, max_time_begin)
-        self.log.info("Final estimated data start time: %f", self.data_start_time)
+        self.log.info(" - Final estimated data start time: %f", self.data_start_time)
 
     def _cross_corr(self, y1, y2):
         """
