@@ -103,10 +103,17 @@ class CvrPetCo2Model(Model):
         self.regressors = np.array(regressors)
         self.regressor_tpts = np.array(regressor_tpts)
 
+        # Interpolate regressors onto BOLD timeseries
+        regressors_interp = []
+        mr_timings = self.tpts()
+        for regressor, regressor_tpts in zip(regressors, regressor_tpts):
+            regressors_interp.append(np.interp(mr_timings, regressor_tpts, regressor))
+        self.regressors_interp = np.array(regressors_interp, dtype=np.float32)
+
         # Differences between timepoints for quick interpolation. Given a delay
         # time > 0 we can compute value = regressors[int(delay)] + frac(delay) * regressor_diff[int(delay)]
-        self.regressor_diffs = np.zeros(self.regressors.shape, dtype=np.float32)
-        self.regressor_diffs[:, :-1] = self.regressors[:, 1:] - self.regressors[:, :-1]
+        self.regressor_diffs = np.zeros(self.regressors_interp.shape, dtype=np.float32)
+        self.regressor_diffs[:, :-1] = self.regressors_interp[:, 1:] - self.regressors_interp[:, :-1]
 
         # Min/max values
         self.regressor_mins = np.min(self.regressors, axis=1)
@@ -206,9 +213,9 @@ class CvrPetCo2Model(Model):
             delay = params[extra_param] - self.data_start_time
             extra_param += 1
 
-            # Apply time delay [W, (S), N] FIXME what is length of regressor
+            # Apply time delay [W, (S), N]
             t_delayed = (tpts - delay) / self.tr
-            t_delayed = tf.clip_by_value(t_delayed, 0, len(self.regressors[0])-1)
+            t_delayed = tf.clip_by_value(t_delayed, 0, len(self.regressors_interp[0])-1)
             t_base = tf.floor(t_delayed)
 
             # Integer index into the CO2 and diff arrays
@@ -221,7 +228,7 @@ class CvrPetCo2Model(Model):
             t_frac = None
 
         fit = 1
-        for idx, regressor in enumerate(self.regressors):
+        for idx, regressor in enumerate(self.regressors_interp):
             # Tile regressor arrays over all nodes so we can use tf.gather
             regressor = tf.tile(regressor[np.newaxis, ...], (tf.shape(t_base_idx)[0], 1))
 
