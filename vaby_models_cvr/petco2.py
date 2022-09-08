@@ -112,8 +112,8 @@ class CvrPetCo2Model(Model):
 
         # Differences between timepoints for quick interpolation. Given a delay
         # time > 0 we can compute value = regressors[int(delay)] + frac(delay) * regressor_diff[int(delay)]
-        self.regressor_diffs = np.zeros(self.regressors_interp.shape, dtype=np.float32)
-        self.regressor_diffs[:, :-1] = self.regressors_interp[:, 1:] - self.regressors_interp[:, :-1]
+        self.regressor_diffs = np.zeros(self.regressors.shape, dtype=np.float32)
+        self.regressor_diffs[:, :-1] = self.regressors[:, 1:] - self.regressors[:, :-1]
 
         # Min/max values
         self.regressor_mins = np.min(self.regressors, axis=1)
@@ -213,44 +213,49 @@ class CvrPetCo2Model(Model):
             delay = params[extra_param] - self.data_start_time
             extra_param += 1
 
-            # Apply time delay [W, (S), N]
-            t_delayed = (tpts - delay) / self.tr
-            t_delayed = tf.clip_by_value(t_delayed, 0, len(self.regressors_interp[0])-1)
-            t_base = tf.floor(t_delayed)
-
-            # Integer index into the CO2 and diff arrays
-            t_base_idx = tf.cast(t_base, tf.int32)
-
-            # Fractional distance to next array index, or 0 if base index was < 0
-            t_frac = tf.clip_by_value(t_delayed - t_base, 0, 1)
-        else:
-            t_base_idx = tf.cast(tf.floor(tpts / self.tr), tf.int32)
-            t_frac = None
+            # Delayed time points [W, (S), N]
+            tpts = tpts - delay
 
         fit = 1
-        for idx, regressor in enumerate(self.regressors_interp):
-            # Tile regressor arrays over all nodes so we can use tf.gather
-            regressor = tf.tile(regressor[np.newaxis, ...], (tf.shape(t_base_idx)[0], 1))
+        for reg, reg_diffs, reg_tpts, reg_type, reg_params, reg_min, reg_interp in zip(
+            self.regressors, self.regressor_diffs, self.regressor_tpts, self.regressor_types, regressor_params, self.regressor_mins, self.regressors_interp
+        ):
 
-            # Get value of regressor at integer part of time points
-            delayed = tf.gather(regressor, t_base_idx, axis=1, batch_dims=1)
+            if self.infer_delay is not None:
+                # Restrict the timepoints to those defined by the regressor and get the
+                # index of the first regressor timepoint below each timepoint and the 
+                # fractional distance to the next for use in interpolation
+                idx_regressor = np.interp(tpts, reg_tpts, np.arange(len(reg_tpts), dtype=np.float32))
+                idx_regressor = tf.clip_by_value(idx_regressor, 0, len(reg_tpts)-1)
+                idx_regressor_base = tf.floor(idx_regressor)
+                idx_regressor_frac = tf.clip_by_value(idx_regressor - idx_regressor_base, 0, 1)
+                idx_regressor_base = tf.cast(idx_regressor_base, tf.int32)
+                print("indexes into regressor for time points:\n%s" % idx_regressor_base.numpy())
 
-            if t_frac is not None:
-                # If we have a delay, use the differenced regressor to do linear interpolation on the
+                # Tile regressor arrays over all nodes so we can use tf.gather
+                reg = tf.tile(reg[np.newaxis, ...], (tf.shape(idx_regressor_base)[0], 1))
+
+                # Get value of regressor at integer part of time points
+                reg_values = tf.gather(reg, idx_regressor_base, axis=1, batch_dims=1)
+
+                # Use the differenced regressor to do linear interpolation on the
                 # fractional part of the time points
-                regressor_diff = tf.tile(self.regressor_diffs[idx][np.newaxis, ...], (tf.shape(t_base_idx)[0], 1))
-                delayed_diff = tf.gather(regressor_diff, t_base_idx, axis=1, batch_dims=1)
-                delayed += t_frac * delayed_diff
+                reg_diffs = tf.tile(reg_diffs[np.newaxis, ...], (tf.shape(idx_regressor_base)[0], 1))
+                reg_diffs = tf.gather(reg_diffs, idx_regressor_base, axis=1, batch_dims=1)
+                reg_values += idx_regressor_frac * reg_diffs
+            else:
+                # No delay, so we can use the pre-computed interpolation of regressors onto the time series
+                reg_values = reg_interp
 
             # Sigmoid response
             #return sig0 + (b/(1+c.(e^(-(delayed_co2-c)/d))))/100
 
-            if self.regressor_types[idx] in ("petco2", "co2"):
+            if reg_type in ("petco2", "co2"):
                 # Regressor parameter is CVR
-                fit += regressor_params[idx] * (delayed - self.regressor_mins[idx]) / 100
-            elif self.regressor_types[idx] == "custom":
+                fit += reg_params * (reg_values - reg_min) / 100
+            elif reg_type == "custom":
                 # Regressor parameter is generic coefficient
-                fit += regressor_params[idx] * delayed
+                fit += reg_params * reg_values
 
         fit = sig0 * fit
         return fit
