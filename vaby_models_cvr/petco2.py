@@ -43,6 +43,7 @@ class CvrPetCo2Model(Model):
             # Model options
             ModelOption("infer_sig0", "Infer signal offset", type=bool, default=False),
             ModelOption("infer_delay", "Infer delay shift on regressors", type=bool, default=False),
+            ModelOption("allow_neg_cvr", "Allow negative CVR values", type=bool, default=False),
             #ModelOption("infer_drift", "Infer a linear drift on signal", type=bool, default=False),
             #ModelOption("sigmoid_response", "Use sigmoid relationship between PETCO2 and CVR", type=bool, default=False)
         ]
@@ -81,18 +82,19 @@ class CvrPetCo2Model(Model):
         self.params = []
         regressors = []
         regressor_tpts = []
+        cvr_dist = "Normal" if options.get("allow_neg_cvr", False) else "FoldedNormal"
         for idx, regressor_type in enumerate(self.regressor_types):
             if regressor_type == "co2":
                 # Unprocessed CO2
                 regressors.append(self._preproc_co2(self.regressors[idx], self.regressor_trs[idx]))
                 regressor_tpts.append(self.tpts())
-                self.params.append(get_parameter("cvr%i" % (idx+1), mean=1.0, dist="FoldedNormal", prior_var=2000, post_var=10, **options))
+                self.params.append(get_parameter("cvr%i" % (idx+1), mean=1.0, dist=cvr_dist, prior_var=2000, post_var=10, **options))
                 self.data_start_time = 0
             elif regressor_type == "petco2":
                 # Preprocessed end-tidal CO2 - not necessarily aligned with data or at same temporal resolution
                 regressors.append(self.regressors[idx].astype(np.float32))
                 regressor_tpts.append(np.array(range(len(self.regressors[idx]))) * self.regressor_trs[idx])
-                self.params.append(get_parameter("cvr%i" % (idx+1), mean=1.0, dist="FoldedNormal", prior_var=2000, post_var=10, **options))
+                self.params.append(get_parameter("cvr%i" % (idx+1), mean=1.0, dist=cvr_dist, prior_var=2000, post_var=10, **options))
             elif regressor_type == "custom":
                 # Generic regressor, not necessarily aligned to data or at same temporal resolution
                 regressors.append(self.regressors[idx].astype(np.float32))
@@ -342,7 +344,7 @@ class CvrPetCo2Model(Model):
         windows = int(np.floor(co2_trim.shape[0]/nsearch_vols))
 
         # Find peak PETCO2 in each window - it's value and index position
-        posmax = np.zeros(windows, dtype=np.int)
+        posmax = np.zeros(windows, dtype=np.int32)
         winmax = np.zeros(windows)
         for i in range(windows):
             for j in range(nsearch_vols):
