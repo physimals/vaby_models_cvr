@@ -44,6 +44,7 @@ class CvrPetCo2Model(Model):
             ModelOption("infer_sig0", "Infer signal offset", type=bool, default=False),
             ModelOption("infer_delay", "Infer delay shift on regressors", type=bool, default=False),
             ModelOption("allow_neg_cvr", "Allow negative CVR values", type=bool, default=False),
+            ModelOption("max_estimated_delay", "Maximum estimated delay time in seconds", type=float),
             #ModelOption("infer_drift", "Infer a linear drift on signal", type=bool, default=False),
             #ModelOption("sigmoid_response", "Use sigmoid relationship between PETCO2 and CVR", type=bool, default=False)
         ]
@@ -274,29 +275,32 @@ class CvrPetCo2Model(Model):
         mr_timings = self.tpts()
         bold_data_interp = np.interp(regressor_tpts, mr_timings, bold_data_average)
 
-        _cc, delay_vols = self._cross_corr(bold_data_interp, regressor)
+        if self.max_estimated_delay is None:
+            # Calculate the latest possible start time of the MR data
+            # so we can constrain the cross-correlation to (hopefully) within a single period
+            regressor_duration = len(regressor) * regressor_tpts[1]
+            mr_duration = mr_timings[-1]
+            self.max_estimated_delay = regressor_duration - mr_duration
+            self.log.debug(" - Regressor duration: %f", regressor_duration)
+            self.log.debug(" - MR duration: %f", mr_duration)
+            self.log.info(" - Absolute maximum delay time: %fs", self.max_estimated_delay)
+        else:
+            self.log.info(" - User specified maximum delay time: %fs", self.max_estimated_delay)
+
+        max_delay_vols = int(round(self.max_estimated_delay / regressor_tpts[1])) # Seconds to volumes
+        _cc, delay_vols = self._cross_corr(bold_data_interp, regressor, max_delay_vols)
         self.data_start_time = -delay_vols * regressor_tpts[1] # to seconds assuming uniform spacing
-        self.log.info(" - Cross correlation estimated data start time: %f", self.data_start_time)
+        self.log.info(" - Constrained cross correlation estimated data start time: %f", self.data_start_time)
 
-        # Calculate the latest possible start time of the MR data
-        # in case the cross correlation method returns something silly
-        regressor_duration = len(regressor) * regressor_tpts[1]
-        mr_duration = mr_timings[-1]
-        max_time_begin = regressor_duration - mr_duration
-        self.log.debug(" - Regressor duration: %f", regressor_duration)
-        self.log.debug(" - MR duration: %f", mr_duration)
-        self.log.info(" - Absolute latest start time: %f", max_time_begin)
-        self.data_start_time = min(self.data_start_time, max_time_begin)
-        self.log.info(" - Final estimated data start time: %f", self.data_start_time)
-
-    def _cross_corr(self, y1, y2):
+    def _cross_corr(self, y1, y2, max_lag_vols):
         """
         Calculates the cross correlation and lags
 
         :param y1: 1D Numpy array
         :param y2: 1D Numpy array, same length as y1
+        :param max_lag_volumes: Maximum number of delay volumes
 
-        :return: Tuple of Maximum correlation, lag in terms of the index
+        :return: Tuple of Maximum correlation, lag in terms of the index range [-max_vols, 0]
         """
         if len(y1) != len(y2):
             raise ValueError('The lengths of the inputs should be the same.')
@@ -304,7 +308,8 @@ class CvrPetCo2Model(Model):
         corr = np.correlate(y1 - np.mean(y1), 
                             y2 - np.mean(y2),
                             mode='full')
-        lag = corr.argmax() - (len(y1) - 1)
+        corr = corr[len(y1)-max_lag_vols-1:len(y1)]
+        lag = corr.argmax() - max_lag_vols
         return np.max(corr), lag
 
     def _preproc_co2(self, co2, regressor_tr):
