@@ -140,12 +140,16 @@ class CvrPetCo2Model(Model):
         self.log.info("GLM: Doing fitting on %i voxels", self.data_model.data_space.size)
         bold_data = self.data_model.data_space.srcdata.flat
         t = self.tpts() # in seconds
+        nt = self.data_model.data_space.srcdata.n_tpts
+        nparam = len(self.regressors) + 1
 
         delays = np.arange(delay_min, delay_max+delay_step, delay_step, dtype=np.float32)
         best_resid = np.ones(bold_data.shape[0], dtype=np.float32) * 1e99
         best_delay = np.zeros(bold_data.shape[0], dtype=np.float32)
         best_cvr = np.zeros((bold_data.shape[0], self.n_regressors), dtype=np.float32)
+        best_cvr_var = np.zeros((bold_data.shape[0], self.n_regressors), dtype=np.float32)
         best_sig0 = np.zeros(bold_data.shape[0], dtype=np.float32)
+        best_sig0_var = np.zeros(bold_data.shape[0], dtype=np.float32)
         best_modelfit = np.zeros(bold_data.shape, dtype=np.float32)
         for idx, delay in enumerate(delays):
             self.log.info("GLM: fitting with delay=%f", delay)
@@ -160,13 +164,13 @@ class CvrPetCo2Model(Model):
                 else:
                     x.append(delayed)
 
-            x.append(np.ones(self.data_model.data_space.srcdata.n_tpts))
+            x.append(np.ones(nt))
             x = np.array(x).T
             for vox in range(bold_data.shape[0]):
                 y = bold_data[vox, :]
-                beta, resid, _rank, _s = np.linalg.lstsq(x, y)
+                beta, ssq_resid, _rank, _s = np.linalg.lstsq(x, y)
                 model = np.dot(x, beta)
-                vox_resid = resid[0]
+                vox_resid = ssq_resid[0]
                 if vox_resid < best_resid[vox]:
                     best_delay[vox] = delay
                     best_sig0[vox] = beta[-1]
@@ -177,6 +181,15 @@ class CvrPetCo2Model(Model):
                             best_cvr[vox, ridx] = beta[ridx]/best_sig0[vox]
                     best_modelfit[vox] = model
                     best_resid[vox] = vox_resid
+
+                    # Compute variances
+                    residuals = y - model
+                    noise_var =  np.dot(residuals.T, residuals) / (nt - nparam - 1)
+                    best_vars = noise_var * np.linalg.inv(np.dot(x.T, x))
+                    for ridx in range(len((self.regressors))):
+                        best_cvr_var[vox, ridx] = best_vars[ridx, ridx]
+                    best_sig0_var[vox] = best_vars[-1, -1]
+
             if progress_cb is not None:
                 progress_cb(float(idx)/float(len(delays)))
 
@@ -184,8 +197,10 @@ class CvrPetCo2Model(Model):
         ret = []
         for idx in range(self.n_regressors):
             ret.append(best_cvr[..., idx])
+            ret.append(best_cvr_var[..., idx])
         ret.append(best_delay)
         ret.append(best_sig0)
+        ret.append(best_sig0_var)
         ret.append(best_modelfit)
         return tuple(ret)
 
